@@ -470,9 +470,7 @@ export async function handleResponse(
   // For binary responses, we need to clone the response and buffer all the data
   if (
     response.headers.get("Content-Type")?.includes("application/zip") ||
-    response.headers
-      .get("Content-Type")
-      ?.includes("application/octet-stream") ||
+    response.headers.get("Content-Type")?.includes("application/octet-stream") ||
     response.headers.get("Content-Type")?.includes("application/msgpack")
   ) {
     // Clone response to avoid consuming it

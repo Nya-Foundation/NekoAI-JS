@@ -86,6 +86,7 @@ export class NovelAI {
     metadata: Metadata,
     stream: boolean = false,
     isOpus: boolean = false,
+    forceZip: boolean = false,
   ): Promise<Image[] | AsyncGenerator<MsgpackEvent, void, unknown>> {
     // Process and validate the metadata
     const processedMetadata = this.processMetadata(metadata);
@@ -97,7 +98,9 @@ export class NovelAI {
     }
 
     // Handle vibe transfer for V4 models
-    await this.encodeVibe(processedMetadata);
+    if (processedMetadata.reference_information_extracted_multiple) {
+      await this.encodeVibe(processedMetadata);
+    }
 
     // Prepare the API request payload
     const payload = prepareMetadataForApi(processedMetadata);
@@ -106,7 +109,7 @@ export class NovelAI {
       const isV4 =
         processedMetadata.model && isV4Model(processedMetadata.model);
 
-      if (isV4) {
+      if (isV4 && !forceZip) {
         // V4 models use streaming msgpack endpoint
         return stream
           ? this.streamV4Events(payload)
@@ -138,10 +141,14 @@ export class NovelAI {
 
 
     if (this.verbose) {
-      console.debug(`[Headers] for image generation:`, headers);
-      console.debug(`[Payload] for image generation:`, jsonPayload);
-
-      
+      let cleanPlayload = { ...payload };
+      cleanPlayload.parameters = {
+        ...cleanPlayload.parameters,
+        image: !!cleanPlayload?.parameters?.image ? ("included with " + cleanPlayload.parameters.image.length + " bytes") : undefined,
+        mask: !!cleanPlayload?.parameters?.mask ? ("included with " + cleanPlayload.parameters.mask.length + " bytes") : undefined,
+      }
+      console.log(`[Headers] for image generation:`, headers);
+      console.info(`[Payload] for image generation:`, JSON.stringify(cleanPlayload));
     }
 
     // process.exit(-1);

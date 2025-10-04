@@ -84,12 +84,17 @@ export class MetadataProcessor {
     metadata.prompt = metadata.prompt ?? "1girl, cute";
     metadata.negative_prompt = metadata.negative_prompt ?? "";
     metadata.characterPrompts = metadata.characterPrompts ?? [];
-    metadata.skip_cfg_above_sigma = null;
+    metadata.skip_cfg_above_sigma = metadata.skip_cfg_above_sigma ?? null;
     metadata.legacy_uc = metadata.legacy_uc ?? false;
     metadata.legacy = metadata.legacy ?? false;
     metadata.legacy_v3_extend = metadata.legacy_v3_extend ?? false;
-    metadata.normalize_reference_strength_multiple =
-      metadata.normalize_reference_strength_multiple ?? true;
+
+    // Handle director reference defaults
+    this.applyDirectorReferenceDefaults(metadata);
+
+    // Handle vibe transfer defaults (only if director references are not used)
+    this.applyVibeTransferDefaults(metadata);
+
     metadata.stream = undefined;
   }
 
@@ -293,14 +298,26 @@ export class MetadataProcessor {
 
   /**
    * Handle img2img strength for V4.5 models
-   * Sets default strength if not provided
+   * Sets default strength if not provided and adds img2img object when needed
    *
    * @param metadata - Metadata to update
    * @private
    */
   handleInpaintImg2ImgStrength(metadata: Metadata): void {
     if (metadata.model === Model.V4_5 || metadata.model === Model.V4_5_INP) {
-      metadata.inpaintImg2ImgStrength = metadata.inpaintImg2ImgStrength || 1;
+      // Use metadata.strength as fallback if inpaintImg2ImgStrength is not provided
+      metadata.inpaintImg2ImgStrength = metadata.inpaintImg2ImgStrength ?? metadata.strength ?? 1;
+      
+      // Only add img2img object if inpaintImg2ImgStrength is less than 1
+      if (metadata.inpaintImg2ImgStrength < 1) {
+        metadata.img2img = {
+          strength: metadata.inpaintImg2ImgStrength,
+          color_correct: true
+        };
+      } else {
+        // Remove img2img object if inpaintImg2ImgStrength is 1 or greater
+        delete metadata.img2img;
+      }
     }
   }
 
@@ -445,6 +462,86 @@ export class MetadataProcessor {
       },
       legacy_uc: metadata.legacy_uc || false,
     };
+  }
+
+  /**
+   * Apply default values for director reference fields
+   * Ensures arrays have consistent lengths when director_reference_images is provided
+   * Removes all director reference parameters if no images are provided
+   * When director references are used, removes old vibe transfer parameters and bypasses vibe encoding
+   *
+   * @param metadata - Metadata to update
+   * @private
+   */
+  private applyDirectorReferenceDefaults(metadata: Metadata): void {
+    // If no director reference images provided, remove all director reference parameters
+    if (!metadata.director_reference_images?.length) {
+      delete metadata.director_reference_descriptions;
+      delete metadata.director_reference_images;
+      delete metadata.director_reference_information_extracted;
+      delete metadata.director_reference_strength_values;
+      return;
+    }
+
+    // Director reference images are provided - remove old vibe transfer parameters and bypass vibe encoding
+    delete metadata.reference_image_multiple;
+    delete metadata.reference_information_extracted_multiple;
+    delete metadata.reference_strength_multiple;
+    delete metadata.normalize_reference_strength_multiple;
+
+    const imageCount = metadata.director_reference_images.length;
+
+    // Initialize arrays if not provided
+    metadata.director_reference_descriptions = metadata.director_reference_descriptions ?? [];
+    metadata.director_reference_information_extracted = metadata.director_reference_information_extracted ?? [];
+    metadata.director_reference_strength_values = metadata.director_reference_strength_values ?? [];
+
+    // Ensure all arrays have the same length as director_reference_images
+    while (metadata.director_reference_descriptions.length < imageCount) {
+      metadata.director_reference_descriptions.push({
+        caption: {
+          base_caption: "character",
+          char_captions: []
+        },
+        legacy_uc: false
+      });
+    }
+
+    while (metadata.director_reference_information_extracted.length < imageCount) {
+      metadata.director_reference_information_extracted.push(1);
+    }
+
+    while (metadata.director_reference_strength_values.length < imageCount) {
+      metadata.director_reference_strength_values.push(1);
+    }
+
+    // Trim arrays if they're longer than the image count
+    if (metadata.director_reference_descriptions.length > imageCount) {
+      metadata.director_reference_descriptions = metadata.director_reference_descriptions.slice(0, imageCount);
+    }
+    if (metadata.director_reference_information_extracted.length > imageCount) {
+      metadata.director_reference_information_extracted = metadata.director_reference_information_extracted.slice(0, imageCount);
+    }
+    if (metadata.director_reference_strength_values.length > imageCount) {
+      metadata.director_reference_strength_values = metadata.director_reference_strength_values.slice(0, imageCount);
+    }
+  }
+
+  /**
+   * Apply default values for vibe transfer fields
+   * Only applies when director references are not being used
+   *
+   * @param metadata - Metadata to update
+   * @private
+   */
+  private applyVibeTransferDefaults(metadata: Metadata): void {
+    // Only apply vibe transfer defaults if director references are not being used
+    if (!metadata.director_reference_images?.length) {
+      metadata.normalize_reference_strength_multiple =
+        metadata.normalize_reference_strength_multiple ?? true;
+      metadata.reference_image_multiple = metadata.reference_image_multiple ?? undefined;
+      metadata.reference_strength_multiple = metadata.reference_strength_multiple ?? undefined;
+    }
   }
 
   /**

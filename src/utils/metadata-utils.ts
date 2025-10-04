@@ -86,5 +86,12 @@ export function calculateCost(metadata: Metadata, isOpus = false): number {
   const opusDiscount =
     isOpus && steps <= 28 && adjustedResolution <= 1024 * 1024;
 
-  return perSample * (n_samples - (opusDiscount ? 1 : 0));
+  let totalCost = perSample * (n_samples - (opusDiscount ? 1 : 0));
+
+  // Add +5 cost for director reference images
+  if (metadata.director_reference_images?.length) {
+    totalCost += 5;
+  }
+
+  return totalCost;
 }
