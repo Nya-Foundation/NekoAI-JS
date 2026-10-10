@@ -7,13 +7,10 @@
  * @param prompt - Prompt string with tags separated by commas
  * @returns Deduplicated prompt string
  */
-export function deduplicateTags(prompt: string): string {
-  if (!prompt) return prompt;
-
-  const seen = new Set<string>();
+function dedupeCommaSegments(text: string, seen: Set<string>): string[] {
   const deduped: string[] = [];
 
-  for (const tag of prompt.split(",")) {
+  for (const tag of text.split(",")) {
     const trimmed = tag.trim();
     if (!trimmed) continue;
     if (trimmed.includes("::")) {
@@ -27,5 +24,28 @@ export function deduplicateTags(prompt: string): string {
     }
   }
 
-  return deduped.join(", ");
+  return deduped;
+}
+
+export function deduplicateTags(prompt: string): string {
+  if (!prompt) return prompt;
+
+  // A single line keeps the historical join: a trailing comma is an empty
+  // segment and is dropped. Newlines must stay, and a ", " (or ",") already
+  // sitting at the end of a line is part of that line, not an empty segment.
+  if (!prompt.includes("\n")) {
+    return dedupeCommaSegments(prompt, new Set()).join(", ");
+  }
+
+  const seen = new Set<string>();
+  return prompt
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => {
+      const trailing = line.match(/,[ \t]*$/);
+      const body = trailing ? line.slice(0, trailing.index) : line;
+      const rebuilt = dedupeCommaSegments(body, seen).join(", ");
+      return trailing ? rebuilt + trailing[0] : rebuilt;
+    })
+    .join("\n");
 }

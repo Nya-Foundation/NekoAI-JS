@@ -18,6 +18,10 @@ export {
   RESOLUTION_DIMENSIONS,
   Sampler,
   TextModel,
+  isV4Model,
+  isV5Family,
+  isV5MediumEffort,
+  usesV4PromptEnvelope,
 } from "./constants";
 
 // Export types
@@ -36,6 +40,8 @@ export type {
   Metadata,
   NovelAIOptions,
   NovelAIResponse,
+  NovelAISubscription,
+  OpusUsage,
   ParsedImage,
   PositionCoords,
   RetryConfig,

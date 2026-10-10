@@ -10,6 +10,7 @@ import {
   Model,
   TextModel,
   isV4Model,
+  usesV4PromptEnvelope,
 } from "./constants";
 import { Image, MsgpackEvent, EventType } from "./image";
 import {
@@ -23,6 +24,7 @@ import {
   Metadata,
   NovelAIOptions,
   NovelAIResponse,
+  NovelAISubscription,
   RetryConfig,
   TagSuggestion,
   TextGenerationOptions,
@@ -174,12 +176,12 @@ export class NovelAI {
 
     const payload = prepareMetadataForApi(processedMetadata);
     const useEventStream =
-      isV4Model(processedMetadata.model!) && !forceZip;
+      usesV4PromptEnvelope(processedMetadata.model!) && !forceZip;
 
     if (stream) {
       if (!useEventStream) {
         throw new Error(
-          "Streaming is only supported for V4/V4.5 models without forceZip; V3 models return the final image only.",
+          "Streaming is only supported for V4/V4.5/V5 models without forceZip; V3 models return the final image only.",
         );
       }
       // Open the connection (with retry) before returning the generator so
@@ -643,6 +645,35 @@ export class NovelAI {
       strength,
       noise,
     });
+  }
+
+  /**
+   * Fetch the current account subscription, including Opus image usage when supplied.
+   * Hits GET /user/subscription on the image host (same as the web client).
+   */
+  async getSubscription(): Promise<NovelAISubscription> {
+    return withRetry(async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+      try {
+        const response = await fetch(
+          `${this.host}${Endpoint.SUBSCRIPTION}`,
+          {
+            method: "GET",
+            headers: prepHeaders(this.headers),
+            signal: controller.signal,
+          },
+        );
+        if (!response.ok) {
+          throw await apiErrorFromResponse(response);
+        }
+        return (await response.json()) as NovelAISubscription;
+      } catch (error) {
+        throw this.handleRequestError(error);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }, this.retryConfig);
   }
 
   /**

@@ -3,7 +3,9 @@ import {
   Model,
   Sampler,
   Noise,
-  isV4Model,
+  isV5Family,
+  isV5MediumEffort,
+  usesV4PromptEnvelope,
   Resolution,
   RESOLUTION_DIMENSIONS,
 } from "./constants";
@@ -19,6 +21,9 @@ const BASE_MODEL: Partial<Record<Model, Model>> = {
   [Model.V4_CUR_INP]: Model.V4_CUR,
   [Model.V4_5_INP]: Model.V4_5,
   [Model.V4_5_CUR_INP]: Model.V4_5_CUR,
+  [Model.V5_INP]: Model.V5,
+  [Model.V5_MED_INP]: Model.V5_MED,
+  [Model.V5_CUR_INP]: Model.V5_CUR,
   [Model.FURRY_INP]: Model.FURRY,
 };
 
@@ -32,6 +37,11 @@ function baseModel(model: Model): Model {
 const QUALITY_TAGS: Partial<Record<Model, string>> = {
   [Model.V4_5]: "very aesthetic, masterpiece, no text",
   [Model.V4_5_CUR]:
+    "location, masterpiece, no text, -0.8::feet::, rating:general",
+  // V5 Full/Curated quality tags match V4.5 in the launch capture
+  [Model.V5]: "very aesthetic, masterpiece, no text",
+  [Model.V5_MED]: "very aesthetic, masterpiece, no text",
+  [Model.V5_CUR]:
     "location, masterpiece, no text, -0.8::feet::, rating:general",
   [Model.V4]: "no text, best quality, very aesthetic, absurdres",
   [Model.V4_CUR]: "rating:general, amazing quality, very aesthetic, absurdres",
@@ -73,6 +83,11 @@ const UC_PRESETS: Partial<Record<Model, string[]>> = {
   ],
 };
 
+// V5 reuses V4.5 UC presets (same launch capture)
+UC_PRESETS[Model.V5] = UC_PRESETS[Model.V4_5];
+UC_PRESETS[Model.V5_MED] = UC_PRESETS[Model.V5];
+UC_PRESETS[Model.V5_CUR] = UC_PRESETS[Model.V4_5_CUR];
+
 /**
  * Class responsible for processing and validating metadata before sending to API
  */
@@ -91,14 +106,23 @@ export class MetadataProcessor {
         : JSON.parse(JSON.stringify(metadata));
 
     this.applyDefaultValues(result);
+    this.applyMediumEffort(result);
     this.handleResolution(result);
 
     this.handleUcPreset(result);
     this.handleQualityTags(result);
 
-    result.prompt = result.prompt ? deduplicateTags(result.prompt) : "";
+    // Deduplicate tags (skipped when deduplicate_tags is explicitly false)
+    const shouldDeduplicate = result.deduplicate_tags !== false;
+    result.prompt = result.prompt
+      ? shouldDeduplicate
+        ? deduplicateTags(result.prompt)
+        : result.prompt
+      : "";
     result.negative_prompt = result.negative_prompt
-      ? deduplicateTags(result.negative_prompt)
+      ? shouldDeduplicate
+        ? deduplicateTags(result.negative_prompt)
+        : result.negative_prompt
       : "";
 
     this.handleActionSpecificParameters(result);
@@ -138,7 +162,10 @@ export class MetadataProcessor {
     metadata.controlnet_strength = metadata.controlnet_strength ?? 1;
     metadata.add_original_image = metadata.add_original_image ?? true;
     metadata.autoSmea = metadata.autoSmea ?? false;
-    metadata.params_version = metadata.params_version ?? 3;
+    // V5 live capture uses params_version 4; older families keep 3 unless the caller sets it.
+    if (metadata.params_version == null) {
+      metadata.params_version = isV5Family(metadata.model!) ? 4 : 3;
+    }
     metadata.prompt = metadata.prompt ?? "1girl, cute";
     metadata.negative_prompt = metadata.negative_prompt ?? "";
     metadata.characterPrompts = metadata.characterPrompts ?? [];
@@ -221,10 +248,13 @@ export class MetadataProcessor {
   }
 
   /**
-   * V4 generate requests go through the streaming endpoint in msgpack format
+   * V4 / V4.5 / V5 generate requests go through the streaming endpoint in msgpack format
    */
   private handleStream(metadata: Metadata): void {
-    if (isV4Model(metadata.model!) && metadata.action === Action.GENERATE) {
+    if (
+      usesV4PromptEnvelope(metadata.model!) &&
+      metadata.action === Action.GENERATE
+    ) {
       metadata.stream = "msgpack";
     }
   }
@@ -247,10 +277,10 @@ export class MetadataProcessor {
   }
 
   /**
-   * Drop V3-only settings for V4+ models
+   * Drop V3-only settings for V4+ / V5 models (v4_prompt envelope family)
    */
   private handleModelSpecificSettings(metadata: Metadata): void {
-    if (isV4Model(metadata.model!)) {
+    if (usesV4PromptEnvelope(metadata.model!)) {
       metadata.sm = undefined;
       metadata.sm_dyn = undefined;
     }
@@ -279,9 +309,29 @@ export class MetadataProcessor {
   }
 
   /**
+   * Medium effort sends ucPresetId and must not also prepend a numeric preset.
+   */
+  private applyMediumEffort(metadata: Metadata): void {
+    if (!isV5MediumEffort(metadata.model)) return;
+    metadata.steps = 14;
+    metadata.sampler = Sampler.EULER_ANC;
+    delete metadata.cfg_rescale;
+    metadata.negative_prompt = "";
+    metadata.ucPresetId = "heavy";
+    delete metadata.ucPreset;
+    metadata.characterPrompts?.forEach((cp) => {
+      cp.uc = "";
+    });
+  }
+
+  /**
    * Prepend the model-specific negative prompt preset selected by ucPreset
    */
   handleUcPreset(metadata: Metadata): void {
+    if (metadata.ucPresetId) {
+      delete metadata.ucPreset;
+      return;
+    }
     const presets = UC_PRESETS[baseModel(metadata.model!)];
     const uc = presets?.[metadata.ucPreset ?? 0];
     if (!uc) return;
@@ -314,22 +364,38 @@ export class MetadataProcessor {
   /**
    * Determine if coordinates should be used based on character prompt positions.
    * Must run after handleCharacterPrompts so center defaults are in place.
+   * Nullish centers still count as auto-position (use_coords false).
    */
   handleUseCoords(metadata: Metadata): void {
     metadata.use_coords =
-      metadata.characterPrompts?.some(
-        (cp) => cp.center!.x !== 0.5 || cp.center!.y !== 0.5,
-      ) ?? false;
+      metadata.characterPrompts?.some((cp) => {
+        const x = cp.center?.x ?? 0.5;
+        const y = cp.center?.y ?? 0.5;
+        return x !== 0.5 || y !== 0.5;
+      }) ?? false;
   }
 
   /**
    * Set default values for character prompts and deduplicate tags
    */
   handleCharacterPrompts(metadata: Metadata): void {
+    const shouldDeduplicate = metadata.deduplicate_tags !== false;
     metadata.characterPrompts?.forEach((cp) => {
       cp.enabled = cp.enabled ?? true;
-      cp.prompt = cp.prompt ? deduplicateTags(cp.prompt) : "1girl, cute";
-      cp.uc = cp.uc ? deduplicateTags(cp.uc) : "lowres, aliasing";
+      cp.prompt = cp.prompt
+        ? shouldDeduplicate
+          ? deduplicateTags(cp.prompt)
+          : cp.prompt
+        : "1girl, cute";
+      if (isV5MediumEffort(metadata.model)) {
+        cp.uc = "";
+      } else {
+        cp.uc = cp.uc
+          ? shouldDeduplicate
+            ? deduplicateTags(cp.uc)
+            : cp.uc
+          : "lowres, aliasing";
+      }
       cp.center = {
         x: cp.center?.x ?? 0.5,
         y: cp.center?.y ?? 0.5,
@@ -338,10 +404,10 @@ export class MetadataProcessor {
   }
 
   /**
-   * Build the V4 prompt structure for V4/V4.5 models
+   * Build the V4 prompt structure for V4 / V4.5 / V5 models
    */
   handleV4Prompt(metadata: Metadata): void {
-    if (metadata.v4_prompt || !isV4Model(metadata.model!)) return;
+    if (metadata.v4_prompt || !usesV4PromptEnvelope(metadata.model!)) return;
 
     const charCaptions: CharacterCaption[] = [];
     metadata.characterPrompts?.forEach((cp) => {
@@ -364,10 +430,11 @@ export class MetadataProcessor {
   }
 
   /**
-   * Build the V4 negative prompt structure for V4/V4.5 models
+   * Build the V4 negative prompt structure for V4 / V4.5 / V5 models
    */
   handleV4NegativePrompt(metadata: Metadata): void {
-    if (metadata.v4_negative_prompt || !isV4Model(metadata.model!)) return;
+    if (metadata.v4_negative_prompt || !usesV4PromptEnvelope(metadata.model!))
+      return;
 
     const charCaptions: CharacterCaption[] = [];
     metadata.characterPrompts?.forEach((cp) => {

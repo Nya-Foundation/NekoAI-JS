@@ -9,6 +9,25 @@ import {
 } from "./constants";
 
 /**
+ * Opus image-generation usage battery from GET /user/subscription
+ */
+export interface OpusUsage {
+  percent: number;
+  isNegative: boolean;
+  timeUntilNextPercent: number;
+}
+
+/**
+ * Account subscription payload from GET /user/subscription
+ */
+export interface NovelAISubscription {
+  tier: number;
+  active: boolean;
+  usage?: OpusUsage;
+  [key: string]: unknown;
+}
+
+/**
  * Configuration for API request retries
  */
 export interface RetryConfig {
@@ -148,6 +167,11 @@ export interface Metadata {
   negative_prompt?: string;
   qualityToggle?: boolean;
   ucPreset?: 0 | 1 | 2 | 3;
+  /**
+   * Client-side control: when false, skip comma-separated tag deduplication.
+   * Stripped before the API request.
+   */
+  deduplicate_tags?: boolean;
 
   // Image settings
   width?: number;
@@ -199,8 +223,8 @@ export interface Metadata {
   /** Fidelity slider (0-1) per reference image */
   director_reference_secondary_strength_values?: number[];
 
-  // V4/V4.5 specific settings
-  params_version?: 1 | 2 | 3;
+  // V4/V4.5/V5 specific settings
+  params_version?: 1 | 2 | 3 | 4;
   autoSmea?: boolean;
   characterPrompts?: CharacterPrompt[];
   v4_prompt?: V4PromptFormat;
@@ -215,6 +239,22 @@ export interface Metadata {
   // V4.5 specific settings
   /** Sent to the API as inpaint_img2img_strength (default 1) */
   inpaintImg2ImgStrength?: number;
+
+  // V5 optional request fields (pass-through; omit when undefined)
+  /** Max Enhance: keep source WxH and set true instead of numeric scale-up. */
+  upscaled_enhance?: boolean;
+  /** Straight alpha channel for transparent V5 outputs. */
+  straight_alpha?: boolean | null;
+  /** String quality preset id when the client sends preset hints (e.g. "standard"). */
+  qualityPresetId?: string;
+  /** String UC preset id when the client sends preset hints (e.g. "heavy"). */
+  ucPresetId?: string;
+  /** Numeric encoding of qualityPresetId (0=none …). */
+  tag_hint_qt?: number;
+  /** Numeric encoding of ucPresetId. */
+  tag_hint_uc_preset?: number;
+  /** True when transparent-background mode is requested on V5. */
+  tag_hint_transparent_background?: boolean;
 
   // Misc settings
   color_correct?: boolean;

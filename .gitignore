@@ -42,4 +42,5 @@ npm-debug.log*
 
 # JSR files
 .jsr
-.jsrrc
+.jsrrc.git-audit.log
+graphify-out/

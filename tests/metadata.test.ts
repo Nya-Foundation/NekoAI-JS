@@ -266,14 +266,45 @@ describe("prepareMetadataForApi", () => {
     expect(payload.parameters.inpaintImg2ImgStrength).toBeUndefined();
   });
 
-  it("removes characterPrompts (already folded into v4_prompt)", () => {
-    expect(payload.parameters.characterPrompts).toBeUndefined();
+  it("keeps characterPrompts alongside v4_prompt (webapp parity)", () => {
+    expect(payload.parameters.characterPrompts).toHaveLength(1);
+    expect(payload.parameters.characterPrompts[0].prompt).toBe("1girl");
     expect(payload.parameters.v4_prompt).toBeDefined();
   });
 
   it("keeps null values but drops undefined ones", () => {
     expect(payload.parameters.skip_cfg_above_sigma).toBeNull();
     expect("sm" in payload.parameters).toBe(false);
+  });
+});
+
+describe("V5 medium effort", () => {
+  it("locks steps, sampler, UC, and drops CFG rescale", () => {
+    const result = processor.processMetadata({
+      model: Model.V5_MED,
+      prompt: "1girl",
+      steps: 28,
+      sampler: Sampler.EULER,
+      cfg_rescale: 0.4,
+      negative_prompt: "hat",
+      ucPreset: 2,
+      characterPrompts: [{ prompt: "blue hair", uc: "bad hands" }],
+    });
+    expect(result.steps).toBe(14);
+    expect(result.sampler).toBe(Sampler.EULER_ANC);
+    expect(result.cfg_rescale).toBeUndefined();
+    expect(result.negative_prompt).toBe("");
+    expect(result.ucPreset).toBeUndefined();
+    expect(result.ucPresetId).toBe("heavy");
+    expect(result.characterPrompts?.[0].uc).toBe("");
+    expect(result.v4_negative_prompt?.caption.base_caption).toBe("");
+    expect(result.v4_negative_prompt?.caption.char_captions).toEqual([]);
+    const payload = prepareMetadataForApi(result);
+    expect(payload.model).toBe("nai-diffusion-5-full-medium");
+    expect(payload.parameters.ucPreset).toBeUndefined();
+    expect(payload.parameters.ucPresetId).toBe("heavy");
+    expect(payload.parameters.cfg_rescale).toBeUndefined();
+    expect(payload.parameters.stream).toBe("msgpack");
   });
 });
 

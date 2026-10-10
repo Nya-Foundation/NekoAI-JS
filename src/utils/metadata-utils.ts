@@ -1,5 +1,5 @@
 import { Metadata } from "../types";
-import { Action, isV4Model } from "../constants";
+import { Action, usesV4PromptEnvelope } from "../constants";
 
 /** Maximum total pixel count accepted by the generation API */
 export const MAX_PIXELS = 3047424;
@@ -41,8 +41,10 @@ export function prepareMetadataForApi(metadata: Metadata): any {
   delete params.action;
   delete params.prompt;
   delete params.resPreset;
-  // Already folded into v4_prompt / v4_negative_prompt
-  delete params.characterPrompts;
+  // Keep characterPrompts: webapp 787d312 sends it alongside v4_prompt
+  // (carries per-character `name` labels that v4_prompt has no slot for).
+  // Client-side control flag; never send to the API
+  delete params.deduplicate_tags;
 
   // Client-side name -> API name
   if (params.inpaintImg2ImgStrength !== undefined) {
@@ -74,9 +76,9 @@ export function calculateCost(metadata: Metadata, isOpus = false): number {
       ? metadata.strength
       : 1.0;
 
-  // SMEA factor: V4+ models use autoSmea, V3 uses sm/sm_dyn
+  // SMEA factor: V4+ / V5 models use autoSmea, V3 uses sm/sm_dyn
   let smeaFactor = 1.0;
-  if (metadata.model && isV4Model(metadata.model)) {
+  if (metadata.model && usesV4PromptEnvelope(metadata.model)) {
     if (metadata.autoSmea) {
       smeaFactor = 1.2;
     }
