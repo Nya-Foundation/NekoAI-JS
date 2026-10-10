@@ -4,6 +4,7 @@ import {
   Sampler,
   Noise,
   isV5Family,
+  isV5MediumEffort,
   usesV4PromptEnvelope,
   Resolution,
   RESOLUTION_DIMENSIONS,
@@ -21,6 +22,7 @@ const BASE_MODEL: Partial<Record<Model, Model>> = {
   [Model.V4_5_INP]: Model.V4_5,
   [Model.V4_5_CUR_INP]: Model.V4_5_CUR,
   [Model.V5_INP]: Model.V5,
+  [Model.V5_MED_INP]: Model.V5_MED,
   [Model.V5_CUR_INP]: Model.V5_CUR,
   [Model.FURRY_INP]: Model.FURRY,
 };
@@ -38,6 +40,7 @@ const QUALITY_TAGS: Partial<Record<Model, string>> = {
     "location, masterpiece, no text, -0.8::feet::, rating:general",
   // V5 Full/Curated quality tags match V4.5 in the launch capture
   [Model.V5]: "very aesthetic, masterpiece, no text",
+  [Model.V5_MED]: "very aesthetic, masterpiece, no text",
   [Model.V5_CUR]:
     "location, masterpiece, no text, -0.8::feet::, rating:general",
   [Model.V4]: "no text, best quality, very aesthetic, absurdres",
@@ -82,6 +85,7 @@ const UC_PRESETS: Partial<Record<Model, string[]>> = {
 
 // V5 reuses V4.5 UC presets (same launch capture)
 UC_PRESETS[Model.V5] = UC_PRESETS[Model.V4_5];
+UC_PRESETS[Model.V5_MED] = UC_PRESETS[Model.V5];
 UC_PRESETS[Model.V5_CUR] = UC_PRESETS[Model.V4_5_CUR];
 
 /**
@@ -102,6 +106,7 @@ export class MetadataProcessor {
         : JSON.parse(JSON.stringify(metadata));
 
     this.applyDefaultValues(result);
+    this.applyMediumEffort(result);
     this.handleResolution(result);
 
     this.handleUcPreset(result);
@@ -304,9 +309,29 @@ export class MetadataProcessor {
   }
 
   /**
+   * Medium effort sends ucPresetId and must not also prepend a numeric preset.
+   */
+  private applyMediumEffort(metadata: Metadata): void {
+    if (!isV5MediumEffort(metadata.model)) return;
+    metadata.steps = 14;
+    metadata.sampler = Sampler.EULER_ANC;
+    delete metadata.cfg_rescale;
+    metadata.negative_prompt = "";
+    metadata.ucPresetId = "heavy";
+    delete metadata.ucPreset;
+    metadata.characterPrompts?.forEach((cp) => {
+      cp.uc = "";
+    });
+  }
+
+  /**
    * Prepend the model-specific negative prompt preset selected by ucPreset
    */
   handleUcPreset(metadata: Metadata): void {
+    if (metadata.ucPresetId) {
+      delete metadata.ucPreset;
+      return;
+    }
     const presets = UC_PRESETS[baseModel(metadata.model!)];
     const uc = presets?.[metadata.ucPreset ?? 0];
     if (!uc) return;
@@ -362,11 +387,15 @@ export class MetadataProcessor {
           ? deduplicateTags(cp.prompt)
           : cp.prompt
         : "1girl, cute";
-      cp.uc = cp.uc
-        ? shouldDeduplicate
-          ? deduplicateTags(cp.uc)
-          : cp.uc
-        : "lowres, aliasing";
+      if (isV5MediumEffort(metadata.model)) {
+        cp.uc = "";
+      } else {
+        cp.uc = cp.uc
+          ? shouldDeduplicate
+            ? deduplicateTags(cp.uc)
+            : cp.uc
+          : "lowres, aliasing";
+      }
       cp.center = {
         x: cp.center?.x ?? 0.5,
         y: cp.center?.y ?? 0.5,

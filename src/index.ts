@@ -20,6 +20,7 @@ export {
   TextModel,
   isV4Model,
   isV5Family,
+  isV5MediumEffort,
   usesV4PromptEnvelope,
 } from "./constants";
 

@@ -42,4 +42,30 @@ describe("deduplicate_tags control flag", () => {
     const payload = prepareMetadataForApi(processed);
     expect(payload.parameters).not.toHaveProperty("deduplicate_tags");
   });
+
+  it("keeps a line-ending comma-space in front of baked newlines", () => {
+    const processed = metadataProcessor.processMetadata({
+      prompt: "1girl, solo, \n1girl, standing, smile\nlooking at viewer",
+      model: Model.V4_5,
+      action: Action.GENERATE,
+      deduplicate_tags: true,
+      ucPreset: 99 as Metadata["ucPreset"],
+      qualityToggle: false,
+    } as Metadata);
+
+    expect(processed.prompt).toBe(
+      "1girl, solo, \nstanding, smile\nlooking at viewer"
+    );
+
+    const kept = metadataProcessor.processMetadata({
+      prompt: "1girl, solo, \nstanding, smile, \n",
+      model: Model.V4_5,
+      action: Action.GENERATE,
+      deduplicate_tags: true,
+      ucPreset: 99 as Metadata["ucPreset"],
+      qualityToggle: false,
+    } as Metadata);
+
+    expect(kept.prompt).toBe("1girl, solo, \nstanding, smile, \n");
+  });
 });
