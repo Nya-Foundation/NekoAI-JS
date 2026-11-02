@@ -213,7 +213,7 @@ export interface Metadata {
   prefer_brownian?: boolean;
 
   // V4.5 specific settings
-  /** Sent to the API as inpaint_img2img_strength (default 1) */
+  /** Inpainting blend strength. Defaults to 1 for ordinary img2img. */
   inpaintImg2ImgStrength?: number;
 
   // Misc settings

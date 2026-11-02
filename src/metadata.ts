@@ -379,7 +379,7 @@ export class MetadataProcessor {
   }
 
   /**
-   * Default inpaint img2img strength for V4.5 models. When below 1, the API
+   * Default inpaint img2img strength for V4.5 and V5 models. When below 1, the API
    * additionally expects an img2img sub-object with color correction.
    */
   handleInpaintImg2ImgStrength(metadata: Metadata): void {
@@ -392,7 +392,9 @@ export class MetadataProcessor {
       metadata.model === Model.V5_MEDIUM_INP
     ) {
       metadata.inpaintImg2ImgStrength =
-        metadata.inpaintImg2ImgStrength ?? metadata.strength ?? 1;
+        metadata.inpaintImg2ImgStrength ??
+        (metadata.action === Action.INPAINT ? metadata.strength : undefined) ??
+        1;
 
       if (metadata.inpaintImg2ImgStrength < 1) {
         metadata.img2img = {

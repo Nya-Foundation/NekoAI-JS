@@ -70,6 +70,25 @@ describe("V5 payloads", () => {
     });
     expect(result.image_format).toBe("webp");
   });
+
+  it("keeps positioned V5 character captions in the request", () => {
+    const payload = prepareMetadataForApi(
+      processor.processMetadata({
+        model: Model.V5,
+        prompt: "2girls",
+        characterPrompts: [
+          { prompt: "girl, red hair", center: { x: 0.28, y: 0.5 } },
+          { prompt: "girl, blue hair", center: { x: 0.72, y: 0.5 } },
+        ],
+      }),
+    );
+    expect(payload.parameters.use_coords).toBe(true);
+    expect(
+      payload.parameters.v4_prompt.caption.char_captions.map(
+        (caption: { char_caption: string }) => caption.char_caption,
+      ),
+    ).toEqual(["girl, red hair", "girl, blue hair"]);
+  });
 });
 
 describe("MetadataProcessor", () => {
@@ -279,6 +298,19 @@ describe("director reference defaults", () => {
 });
 
 describe("inpaint img2img strength (V4.5)", () => {
+  it("keeps ordinary V5 img2img strength separate", () => {
+    const result = processor.processMetadata({
+      model: Model.V5,
+      action: Action.IMG2IMG,
+      strength: 0.35,
+    });
+    expect(result.strength).toBe(0.35);
+    expect(result.inpaintImg2ImgStrength).toBe(1);
+    expect(result.img2img).toBeUndefined();
+    const payload = prepareMetadataForApi(result);
+    expect(payload.parameters.inpaintImg2ImgStrength).toBe(1);
+    expect(payload.parameters.inpaint_img2img_strength).toBeUndefined();
+  });
   it("adds an img2img object when strength is below 1", () => {
     const result = processor.processMetadata({
       model: Model.V4_5_INP,
