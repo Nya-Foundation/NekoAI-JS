@@ -6,6 +6,64 @@ import type { Metadata } from "../src/types";
 
 const processor = new MetadataProcessor();
 
+describe("V5 payloads", () => {
+  it.each([
+    [Model.V5, 23],
+    [Model.V5_MEDIUM, 14],
+    [Model.V5_CUR, 23],
+    [Model.V5_INP, 23],
+  ])("builds the V4 prompt protocol for %s", (model, steps) => {
+    const processed = processor.processMetadata({ prompt: "1girl", model });
+    const payload = prepareMetadataForApi(processed);
+    expect(payload.model).toBe(model);
+    expect(payload.parameters).toMatchObject({
+      params_version: 4,
+      steps,
+      scale: 7,
+      stream: "msgpack",
+      image_format: "webp",
+      straight_alpha: true,
+      qualityPresetId: "standard",
+      ucPresetId: "heavy",
+    });
+    expect(payload.parameters.v4_prompt?.caption.base_caption).toBe(
+      payload.input,
+    );
+    expect(payload.parameters.characterPrompts).toEqual([]);
+    expect(payload.parameters.v4_negative_prompt?.caption.base_caption).toBe(
+      payload.parameters.negative_prompt,
+    );
+    if (model !== Model.V5_CUR) {
+      expect(payload.parameters.inpaintImg2ImgStrength).toBe(1);
+      expect(payload.parameters.inpaint_img2img_strength).toBeUndefined();
+    }
+  });
+
+  it("rejects unsupported Medium settings and V5 references", () => {
+    expect(() =>
+      processor.processMetadata({ model: Model.V5_MEDIUM, steps: 23 }),
+    ).toThrow("V5 Medium requires steps=14");
+    expect(() =>
+      processor.processMetadata({
+        model: Model.V5,
+        reference_image_multiple: ["x"],
+      }),
+    ).toThrow("V5 does not support vibe");
+    expect(() =>
+      processor.processMetadata({ model: Model.V5, autoSmea: true }),
+    ).toThrow("V5 does not support SMEA");
+  });
+
+  it("uses light quality tags when selected", () => {
+    const result = processor.processMetadata({
+      model: Model.V5,
+      prompt: "1girl",
+      qualityPresetId: "light",
+    });
+    expect(result.prompt).toContain("very aesthetic, amazing quality, no text");
+  });
+});
+
 describe("MetadataProcessor", () => {
   it("applies defaults", () => {
     const result = processor.processMetadata({});

@@ -4,6 +4,7 @@ import {
   Sampler,
   Noise,
   isV4Model,
+  isV5Model,
   Resolution,
   RESOLUTION_DIMENSIONS,
 } from "./constants";
@@ -14,6 +15,10 @@ import { deduplicateTags } from "./utils";
  * Inpainting variants share prompt presets with their base model
  */
 const BASE_MODEL: Partial<Record<Model, Model>> = {
+  [Model.V5_MEDIUM]: Model.V5,
+  [Model.V5_INP]: Model.V5,
+  [Model.V5_MEDIUM_INP]: Model.V5,
+  [Model.V5_CUR]: Model.V5,
   [Model.V3_INP]: Model.V3,
   [Model.V4_INP]: Model.V4,
   [Model.V4_CUR_INP]: Model.V4_CUR,
@@ -30,6 +35,7 @@ function baseModel(model: Model): Model {
  * Quality tags appended to the prompt when qualityToggle is enabled
  */
 const QUALITY_TAGS: Partial<Record<Model, string>> = {
+  [Model.V5]: "very aesthetic, masterpiece, no text",
   [Model.V4_5]: "very aesthetic, masterpiece, no text",
   [Model.V4_5_CUR]:
     "location, masterpiece, no text, -0.8::feet::, rating:general",
@@ -43,6 +49,12 @@ const QUALITY_TAGS: Partial<Record<Model, string>> = {
  * Negative prompt presets per model, indexed by ucPreset value
  */
 const UC_PRESETS: Partial<Record<Model, string[]>> = {
+  [Model.V5]: [
+    "nsfw, lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page",
+    "nsfw, lowres, bad hands, bad anatomy, artistic error, sepia, white haze, worst quality, very displeasing, jpeg artifacts, 0::ai-generated::",
+    "nsfw, {worst quality}, distracting watermark, unfinished, bad quality, {widescreen}, upscale, {sequence}, {{grandfathered content}}, blurred foreground, chromatic aberration, sketch, everyone, [sketch background], simple, [flat colors], ych (character), outline, multiple scenes, [[horror (theme)]], comic",
+    "nsfw, lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, @_@, mismatched pupils, glowing eyes, bad anatomy",
+  ],
   [Model.V4_5]: [
     "nsfw, lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page",
     "nsfw, lowres, artistic error, scan artifacts, worst quality, bad quality, jpeg artifacts, multiple views, very displeasing, too many watermarks, negative space, blank page",
@@ -84,6 +96,59 @@ export class MetadataProcessor {
    * @returns Processed metadata object
    */
   processMetadata(metadata: Metadata): Metadata {
+    if (isV5Model(metadata.model!)) {
+      const presetId = ["heavy", "light", "furryFocus", "humanFocus"][
+        metadata.ucPreset ?? 0
+      ];
+      if (metadata.ucPresetId != null && metadata.ucPresetId !== presetId) {
+        throw new Error("ucPresetId must match ucPreset for V5");
+      }
+      const medium =
+        metadata.model === Model.V5_MEDIUM ||
+        metadata.model === Model.V5_MEDIUM_INP;
+      if (medium) {
+        if (metadata.ucPresetId != null && metadata.ucPresetId !== "heavy") {
+          throw new Error("V5 Medium requires the heavy UC preset");
+        }
+        if (metadata.v4_negative_prompt) {
+          throw new Error(
+            "V5 Medium does not support a custom negative prompt",
+          );
+        }
+        for (const [field, expected] of Object.entries({
+          steps: 14,
+          sampler: Sampler.EULER_ANC,
+          cfg_rescale: 0,
+          ucPreset: 0,
+          negative_prompt: "",
+        })) {
+          const value = metadata[field as keyof Metadata];
+          if (value !== undefined && value !== expected)
+            throw new Error(`V5 Medium requires ${field}=${String(expected)}`);
+        }
+      }
+      if (
+        metadata.reference_image_multiple?.length ||
+        metadata.director_reference_images?.length
+      ) {
+        throw new Error("V5 does not support vibe or director references");
+      }
+      if (
+        metadata.autoSmea ||
+        metadata.dynamic_thresholding ||
+        metadata.skip_cfg_above_sigma != null
+      ) {
+        throw new Error(
+          "V5 does not support SMEA, decrisper, or Variety Boost",
+        );
+      }
+      if (metadata.noise_schedule && metadata.noise_schedule !== Noise.KARRAS) {
+        throw new Error("V5 requires the Karras noise schedule");
+      }
+      if (metadata.controlnet_condition || metadata.controlnet_model) {
+        throw new Error("V5 does not support ControlNet");
+      }
+    }
     // Deep copy to avoid modifying the caller's object
     const result: Metadata =
       typeof structuredClone === "function"
@@ -128,8 +193,25 @@ export class MetadataProcessor {
     metadata.ucPreset = metadata.ucPreset ?? 0;
     metadata.qualityToggle = metadata.qualityToggle ?? true;
     metadata.n_samples = metadata.n_samples ?? 1;
-    metadata.steps = metadata.steps ?? 28;
-    metadata.scale = metadata.scale ?? 6.0;
+    metadata.steps =
+      metadata.steps ??
+      (metadata.model === Model.V5_MEDIUM ||
+      metadata.model === Model.V5_MEDIUM_INP
+        ? 14
+        : isV5Model(metadata.model)
+          ? 23
+          : 28);
+    metadata.scale = metadata.scale ?? (isV5Model(metadata.model) ? 7.0 : 6.0);
+    if (isV5Model(metadata.model)) {
+      metadata.straight_alpha = metadata.straight_alpha ?? true;
+      metadata.image_format = metadata.image_format ?? "webp";
+      metadata.qualityPresetId = metadata.qualityPresetId ?? "standard";
+      metadata.ucPresetId =
+        metadata.ucPresetId ??
+        ["heavy", "light", "furryFocus", "humanFocus"][metadata.ucPreset ?? 0];
+      metadata.tag_hint_qt = metadata.tag_hint_qt ?? 1;
+      metadata.tag_hint_uc_preset = metadata.tag_hint_uc_preset ?? 2;
+    }
     metadata.dynamic_thresholding = metadata.dynamic_thresholding ?? false;
     metadata.seed = metadata.seed ?? Math.floor(Math.random() * 4294967288);
     metadata.sampler = metadata.sampler ?? Sampler.EULER_ANC;
@@ -138,7 +220,9 @@ export class MetadataProcessor {
     metadata.controlnet_strength = metadata.controlnet_strength ?? 1;
     metadata.add_original_image = metadata.add_original_image ?? true;
     metadata.autoSmea = metadata.autoSmea ?? false;
-    metadata.params_version = metadata.params_version ?? 3;
+    metadata.params_version = isV5Model(metadata.model)
+      ? 4
+      : (metadata.params_version ?? 3);
     metadata.prompt = metadata.prompt ?? "1girl, cute";
     metadata.negative_prompt = metadata.negative_prompt ?? "";
     metadata.characterPrompts = metadata.characterPrompts ?? [];
@@ -224,7 +308,7 @@ export class MetadataProcessor {
    * V4 generate requests go through the streaming endpoint in msgpack format
    */
   private handleStream(metadata: Metadata): void {
-    if (isV4Model(metadata.model!) && metadata.action === Action.GENERATE) {
+    if (isV4Model(metadata.model!)) {
       metadata.stream = "msgpack";
     }
   }
@@ -272,7 +356,10 @@ export class MetadataProcessor {
   handleQualityTags(metadata: Metadata): void {
     if (!metadata.qualityToggle) return;
 
-    const tags = QUALITY_TAGS[baseModel(metadata.model!)];
+    const tags =
+      isV5Model(metadata.model!) && metadata.qualityPresetId === "light"
+        ? "very aesthetic, amazing quality, no text"
+        : QUALITY_TAGS[baseModel(metadata.model!)];
     if (tags) {
       metadata.prompt = metadata.prompt ? `${metadata.prompt}, ${tags}` : tags;
     }
@@ -296,7 +383,14 @@ export class MetadataProcessor {
    * additionally expects an img2img sub-object with color correction.
    */
   handleInpaintImg2ImgStrength(metadata: Metadata): void {
-    if (metadata.model === Model.V4_5 || metadata.model === Model.V4_5_INP) {
+    if (
+      metadata.model === Model.V4_5 ||
+      metadata.model === Model.V4_5_INP ||
+      metadata.model === Model.V5 ||
+      metadata.model === Model.V5_MEDIUM ||
+      metadata.model === Model.V5_INP ||
+      metadata.model === Model.V5_MEDIUM_INP
+    ) {
       metadata.inpaintImg2ImgStrength =
         metadata.inpaintImg2ImgStrength ?? metadata.strength ?? 1;
 

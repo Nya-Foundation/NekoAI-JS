@@ -26,6 +26,11 @@ export enum Endpoint {
 }
 
 export enum Model {
+  V5 = "nai-diffusion-5-full",
+  V5_MEDIUM = "nai-diffusion-5-full-medium",
+  V5_INP = "nai-diffusion-5-full-inpainting",
+  V5_MEDIUM_INP = "nai-diffusion-5-full-medium-inpainting",
+  V5_CUR = "nai-diffusion-5-curated",
   // NAI V3
   V3 = "nai-diffusion-3",
   V3_INP = "nai-diffusion-3-inpainting",
@@ -47,6 +52,11 @@ export enum Model {
 }
 
 const V4_MODELS: ReadonlySet<Model> = new Set([
+  Model.V5,
+  Model.V5_MEDIUM,
+  Model.V5_INP,
+  Model.V5_MEDIUM_INP,
+  Model.V5_CUR,
   Model.V4,
   Model.V4_INP,
   Model.V4_CUR,
@@ -59,6 +69,16 @@ const V4_MODELS: ReadonlySet<Model> = new Set([
 
 export function isV4Model(model: Model): boolean {
   return V4_MODELS.has(model);
+}
+
+export function isV5Model(model: Model): boolean {
+  return (
+    model === Model.V5 ||
+    model === Model.V5_MEDIUM ||
+    model === Model.V5_INP ||
+    model === Model.V5_MEDIUM_INP ||
+    model === Model.V5_CUR
+  );
 }
 
 /**

@@ -238,11 +238,15 @@ export function createMsgpackEvent(obj: any): MsgpackEvent {
     imageData = new Uint8Array(0);
   }
 
-  // JPEG magic bytes for intermediate steps, PNG for final images
+  // Detect the image format from the response bytes.
   const extension =
     imageData.length >= 2 && imageData[0] === 0xff && imageData[1] === 0xd8
       ? "jpg"
-      : "png";
+      : imageData.length >= 12 &&
+          new TextDecoder().decode(imageData.slice(0, 4)) === "RIFF" &&
+          new TextDecoder().decode(imageData.slice(8, 12)) === "WEBP"
+        ? "webp"
+        : "png";
 
   const eventType = obj.event_type;
   const timestamp = timestampString();
