@@ -8,10 +8,10 @@ const processor = new MetadataProcessor();
 
 describe("V5 payloads", () => {
   it.each([
-    [Model.V5, 23],
+    [Model.V5, 32],
     [Model.V5_MEDIUM, 14],
-    [Model.V5_CUR, 23],
-    [Model.V5_INP, 23],
+    [Model.V5_CUR, 32],
+    [Model.V5_INP, 32],
   ])("builds the V4 prompt protocol for %s", (model, steps) => {
     const processed = processor.processMetadata({ prompt: "1girl", model });
     const payload = prepareMetadataForApi(processed);

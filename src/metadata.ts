@@ -199,7 +199,7 @@ export class MetadataProcessor {
       metadata.model === Model.V5_MEDIUM_INP
         ? 14
         : isV5Model(metadata.model)
-          ? 23
+          ? 32
           : 28);
     metadata.scale = metadata.scale ?? (isV5Model(metadata.model) ? 7.0 : 6.0);
     if (isV5Model(metadata.model)) {
