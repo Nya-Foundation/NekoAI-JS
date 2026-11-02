@@ -204,7 +204,7 @@ export class MetadataProcessor {
     metadata.scale = metadata.scale ?? (isV5Model(metadata.model) ? 7.0 : 6.0);
     if (isV5Model(metadata.model)) {
       metadata.straight_alpha = metadata.straight_alpha ?? true;
-      metadata.image_format = metadata.image_format ?? "webp";
+      metadata.image_format = metadata.image_format ?? "png";
       metadata.qualityPresetId = metadata.qualityPresetId ?? "standard";
       metadata.ucPresetId =
         metadata.ucPresetId ??

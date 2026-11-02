@@ -21,7 +21,7 @@ describe("V5 payloads", () => {
       steps,
       scale: 7,
       stream: "msgpack",
-      image_format: "webp",
+      image_format: "png",
       straight_alpha: true,
       qualityPresetId: "standard",
       ucPresetId: "heavy",
@@ -61,6 +61,14 @@ describe("V5 payloads", () => {
       qualityPresetId: "light",
     });
     expect(result.prompt).toContain("very aesthetic, amazing quality, no text");
+  });
+
+  it("allows WebP when selected explicitly", () => {
+    const result = processor.processMetadata({
+      model: Model.V5,
+      image_format: "webp",
+    });
+    expect(result.image_format).toBe("webp");
   });
 });
 
