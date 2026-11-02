@@ -10,6 +10,7 @@ import {
   Model,
   TextModel,
   isV4Model,
+  isV5Model,
 } from "./constants";
 import { Image, MsgpackEvent, EventType } from "./image";
 import {
@@ -132,7 +133,7 @@ export class NovelAI {
    * Generate images using NovelAI's API
    *
    * @param metadata - Generation parameters
-   * @param stream - Whether to stream intermediate steps (V4/V4.5 models only, default: false)
+   * @param stream - Whether to stream intermediate steps (V4/V5 models only, default: false)
    * @param isOpus - Whether the user has Opus subscription (for cost estimation logging, default: false)
    * @param forceZip - Route V4 models through the ZIP endpoint instead of the event stream (default: false)
    * @returns Array of Image objects, or an AsyncGenerator of MsgpackEvent objects when streaming
@@ -165,21 +166,24 @@ export class NovelAI {
     const processedMetadata = metadataProcessor.processMetadata(resolved);
 
     if (this.verbose) {
-      const cost = calculateCost(processedMetadata, isOpus);
-      console.info(`Generating image... estimated Anlas cost: ${cost}`);
+      if (isV5Model(processedMetadata.model!)) {
+        console.info("Generating V5 image; check account usage for cost");
+      } else {
+        const cost = calculateCost(processedMetadata, isOpus);
+        console.info(`Generating image... estimated Anlas cost: ${cost}`);
+      }
     }
 
     // Encode vibe transfer reference images for V4 models
     await this.encodeVibe(processedMetadata);
 
     const payload = prepareMetadataForApi(processedMetadata);
-    const useEventStream =
-      isV4Model(processedMetadata.model!) && !forceZip;
+    const useEventStream = isV4Model(processedMetadata.model!) && !forceZip;
 
     if (stream) {
       if (!useEventStream) {
         throw new Error(
-          "Streaming is only supported for V4/V4.5 models without forceZip; V3 models return the final image only.",
+          "Streaming is only supported for V4/V5 models without forceZip; V3 models return the final image only.",
         );
       }
       // Open the connection (with retry) before returning the generator so
@@ -188,7 +192,11 @@ export class NovelAI {
         () => this.openStream(`${this.host}${Endpoint.IMAGE_STREAM}`, payload),
         this.retryConfig,
       );
-      return this.parseEventStream(response, payload.action);
+      return this.parseEventStream(
+        response,
+        payload.action,
+        processedMetadata.model!,
+      );
     }
 
     if (!useEventStream) {
@@ -228,16 +236,16 @@ export class NovelAI {
 
     if (result.reference_image_multiple) {
       result.reference_image_multiple = await Promise.all(
-        result.reference_image_multiple.map((img) =>
-          this.resolveToBase64(img) as Promise<string>,
+        result.reference_image_multiple.map(
+          (img) => this.resolveToBase64(img) as Promise<string>,
         ),
       );
     }
 
     if (result.director_reference_images) {
       result.director_reference_images = await Promise.all(
-        result.director_reference_images.map((img) =>
-          this.resolveToBase64(img) as Promise<string>,
+        result.director_reference_images.map(
+          (img) => this.resolveToBase64(img) as Promise<string>,
         ),
       );
     }
@@ -352,10 +360,11 @@ export class NovelAI {
   private async *parseEventStream(
     response: Response,
     action: string,
+    model: Model,
   ): AsyncGenerator<MsgpackEvent, void, unknown> {
     // Inpainting streams SSE; everything else streams length-prefixed msgpack
     const parser =
-      action === "infill"
+      action === "infill" && !isV5Model(model)
         ? new StreamingSSEParser()
         : new StreamingMsgpackParser();
 
@@ -478,7 +487,9 @@ export class NovelAI {
    * Extract the first image from a single-image ZIP response, falling back
    * to the raw bytes when the response is not a ZIP.
    */
-  private async unzipSingleImage(arrayBuffer: ArrayBuffer): Promise<Uint8Array> {
+  private async unzipSingleImage(
+    arrayBuffer: ArrayBuffer,
+  ): Promise<Uint8Array> {
     try {
       const zip = await JSZip.loadAsync(arrayBuffer);
       const firstFile = Object.values(zip.files).find((f) => !f.dir);
@@ -876,10 +887,10 @@ export class NovelAI {
    */
   async listTextModels(): Promise<string[]> {
     const result = await withRetry(async () => {
-      const response = await fetch(
-        `${this.textHost}${Endpoint.TEXT_MODELS}`,
-        { method: "GET", headers: prepHeaders(this.headers) },
-      );
+      const response = await fetch(`${this.textHost}${Endpoint.TEXT_MODELS}`, {
+        method: "GET",
+        headers: prepHeaders(this.headers),
+      });
       if (!response.ok) {
         throw await apiErrorFromResponse(response);
       }
@@ -890,9 +901,7 @@ export class NovelAI {
     return Array.isArray(data) ? data.map((m: any) => m.id) : [];
   }
 
-  private normalizeMessages(
-    messages: string | ChatMessage[],
-  ): ChatMessage[] {
+  private normalizeMessages(messages: string | ChatMessage[]): ChatMessage[] {
     return typeof messages === "string"
       ? [{ role: "user", content: messages }]
       : messages;

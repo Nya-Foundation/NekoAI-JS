@@ -6,6 +6,91 @@ import type { Metadata } from "../src/types";
 
 const processor = new MetadataProcessor();
 
+describe("V5 payloads", () => {
+  it.each([
+    [Model.V5, 32],
+    [Model.V5_MEDIUM, 14],
+    [Model.V5_CUR, 32],
+    [Model.V5_INP, 32],
+  ])("builds the V4 prompt protocol for %s", (model, steps) => {
+    const processed = processor.processMetadata({ prompt: "1girl", model });
+    const payload = prepareMetadataForApi(processed);
+    expect(payload.model).toBe(model);
+    expect(payload.parameters).toMatchObject({
+      params_version: 4,
+      steps,
+      scale: 7,
+      stream: "msgpack",
+      image_format: "png",
+      straight_alpha: true,
+      qualityPresetId: "standard",
+      ucPresetId: "heavy",
+    });
+    expect(payload.parameters.v4_prompt?.caption.base_caption).toBe(
+      payload.input,
+    );
+    expect(payload.parameters.characterPrompts).toEqual([]);
+    expect(payload.parameters.v4_negative_prompt?.caption.base_caption).toBe(
+      payload.parameters.negative_prompt,
+    );
+    if (model !== Model.V5_CUR) {
+      expect(payload.parameters.inpaintImg2ImgStrength).toBe(1);
+      expect(payload.parameters.inpaint_img2img_strength).toBeUndefined();
+    }
+  });
+
+  it("rejects unsupported Medium settings and V5 references", () => {
+    expect(() =>
+      processor.processMetadata({ model: Model.V5_MEDIUM, steps: 23 }),
+    ).toThrow("V5 Medium requires steps=14");
+    expect(() =>
+      processor.processMetadata({
+        model: Model.V5,
+        reference_image_multiple: ["x"],
+      }),
+    ).toThrow("V5 does not support vibe");
+    expect(() =>
+      processor.processMetadata({ model: Model.V5, autoSmea: true }),
+    ).toThrow("V5 does not support SMEA");
+  });
+
+  it("uses light quality tags when selected", () => {
+    const result = processor.processMetadata({
+      model: Model.V5,
+      prompt: "1girl",
+      qualityPresetId: "light",
+    });
+    expect(result.prompt).toContain("very aesthetic, amazing quality, no text");
+  });
+
+  it("allows WebP when selected explicitly", () => {
+    const result = processor.processMetadata({
+      model: Model.V5,
+      image_format: "webp",
+    });
+    expect(result.image_format).toBe("webp");
+  });
+
+  it("keeps positioned V5 character captions in the request", () => {
+    const payload = prepareMetadataForApi(
+      processor.processMetadata({
+        model: Model.V5,
+        prompt: "2girls",
+        characterPrompts: [
+          { prompt: "girl, red hair", center: { x: 0.28, y: 0.5 } },
+          { prompt: "girl, blue hair", center: { x: 0.72, y: 0.5 } },
+        ],
+      }),
+    );
+    expect(payload.parameters.use_coords).toBe(true);
+    expect(
+      payload.parameters.v4_prompt.caption.char_captions.map(
+        (caption: { char_caption: string }) => caption.char_caption,
+      ),
+    ).toEqual(["girl, red hair", "girl, blue hair"]);
+  });
+});
+
 describe("MetadataProcessor", () => {
   it("applies defaults", () => {
     const result = processor.processMetadata({});
@@ -213,6 +298,19 @@ describe("director reference defaults", () => {
 });
 
 describe("inpaint img2img strength (V4.5)", () => {
+  it("keeps ordinary V5 img2img strength separate", () => {
+    const result = processor.processMetadata({
+      model: Model.V5,
+      action: Action.IMG2IMG,
+      strength: 0.35,
+    });
+    expect(result.strength).toBe(0.35);
+    expect(result.inpaintImg2ImgStrength).toBe(1);
+    expect(result.img2img).toBeUndefined();
+    const payload = prepareMetadataForApi(result);
+    expect(payload.parameters.inpaintImg2ImgStrength).toBe(1);
+    expect(payload.parameters.inpaint_img2img_strength).toBeUndefined();
+  });
   it("adds an img2img object when strength is below 1", () => {
     const result = processor.processMetadata({
       model: Model.V4_5_INP,

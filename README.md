@@ -109,6 +109,11 @@ const images = await client.generateImage({
 
 | Enum                  | API id                              |
 | --------------------- | ----------------------------------- |
+| `Model.V5`            | `nai-diffusion-5-full`              |
+| `Model.V5_MEDIUM`     | `nai-diffusion-5-full-medium`       |
+| `Model.V5_INP`        | `nai-diffusion-5-full-inpainting`   |
+| `Model.V5_MEDIUM_INP` | `nai-diffusion-5-full-medium-inpainting` |
+| `Model.V5_CUR`        | `nai-diffusion-5-curated`           |
 | `Model.V4_5`          | `nai-diffusion-4-5-full`            |
 | `Model.V4_5_INP`      | `nai-diffusion-4-5-full-inpainting` |
 | `Model.V4_5_CUR`      | `nai-diffusion-4-5-curated`         |
@@ -121,6 +126,12 @@ const images = await client.generateImage({
 | `Model.V3_INP`        | `nai-diffusion-3-inpainting`        |
 | `Model.FURRY`         | `nai-diffusion-furry-3`             |
 | `Model.FURRY_INP`     | `nai-diffusion-furry-3-inpainting`  |
+
+V5 uses the streaming image endpoint and `params_version: 4`. Select a V5 model explicitly; the library default remains V4.5. V5 Full and Curated default to 32 steps and guidance 7. At normal resolution, 32 steps exceed the Opus 28 step allowance and use Anlas. Medium effort is fixed at 14 steps and Euler Ancestral. Medium effort rejects custom steps, sampler, undesired content, and guidance rescale. V5 requests PNG by default. Set `image_format: "webp"` to request WebP. Vibe transfer and director references are not available with V5. For V5 Curated inpainting, use `Model.V4_5_CUR_INP` until its V5 model is available.
+
+```ts
+const images = await client.generateImage({ prompt: "1girl, garden", model: Model.V5 });
+```
 
 ### Resolution presets
 

@@ -200,7 +200,7 @@ export interface Metadata {
   director_reference_secondary_strength_values?: number[];
 
   // V4/V4.5 specific settings
-  params_version?: 1 | 2 | 3;
+  params_version?: 1 | 2 | 3 | 4;
   autoSmea?: boolean;
   characterPrompts?: CharacterPrompt[];
   v4_prompt?: V4PromptFormat;
@@ -213,12 +213,17 @@ export interface Metadata {
   prefer_brownian?: boolean;
 
   // V4.5 specific settings
-  /** Sent to the API as inpaint_img2img_strength (default 1) */
+  /** Inpainting blend strength. Defaults to 1 for ordinary img2img. */
   inpaintImg2ImgStrength?: number;
 
   // Misc settings
   color_correct?: boolean;
   image_format?: string;
+  straight_alpha?: boolean;
+  qualityPresetId?: "standard" | "light";
+  ucPresetId?: string;
+  tag_hint_qt?: number;
+  tag_hint_uc_preset?: number;
   legacy?: boolean;
   legacy_v3_extend?: boolean;
 

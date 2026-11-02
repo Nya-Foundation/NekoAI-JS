@@ -36,6 +36,16 @@ const intermediateEvent = {
 };
 
 describe("StreamingMsgpackParser", () => {
+  it("preserves WebP output filenames", () => {
+    const webp = new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0, 87, 69, 66, 80]);
+    const events = [
+      ...new StreamingMsgpackParser().feedChunk(
+        msgpackFrame({ ...finalEvent, image: webp }),
+      ),
+    ];
+    expect(events[0].image.filename).toMatch(/\.webp$/);
+    expect(events[0].image.toDataURL()).toMatch(/^data:image\/webp;base64,/);
+  });
   it("parses events split across chunk boundaries", () => {
     const data = new Uint8Array([
       ...msgpackFrame(intermediateEvent),
@@ -62,10 +72,7 @@ describe("SSEStream", () => {
 
   it("parses events split across chunks", () => {
     const sse = new SSEStream();
-    const chunks = [
-      'event: message\ndata: {"a"',
-      ': 1}\n\ndata: {"b": 2}\n\n',
-    ];
+    const chunks = ['event: message\ndata: {"a"', ': 1}\n\ndata: {"b": 2}\n\n'];
 
     const events = chunks.flatMap((c) => [...sse.feed(encoder.encode(c))]);
     expect(events).toHaveLength(2);

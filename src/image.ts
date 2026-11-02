@@ -56,9 +56,7 @@ export class Image {
    */
   toDataURL(): string {
     // Determine the MIME type based on file extension
-    const mimeType = this.filename.toLowerCase().endsWith(".png")
-      ? "image/png"
-      : "image/jpeg";
+    const mimeType = this.mimeType;
     return `data:${mimeType};base64,${this.toBase64()}`;
   }
 
@@ -110,9 +108,7 @@ export class Image {
     }
 
     // Determine the MIME type based on file extension
-    const mimeType = this.filename.toLowerCase().endsWith(".png")
-      ? "image/png"
-      : "image/jpeg";
+    const mimeType = this.mimeType;
     return new Blob([this.data as unknown as BlobPart], { type: mimeType });
   }
 
@@ -127,12 +123,19 @@ export class Image {
     }
 
     // Determine the MIME type based on file extension
-    const mimeType = this.filename.toLowerCase().endsWith(".png")
-      ? "image/png"
-      : "image/jpeg";
+    const mimeType = this.mimeType;
     return new File([this.data as unknown as BlobPart], this.filename, {
       type: mimeType,
     });
+  }
+
+  private get mimeType(): string {
+    const name = this.filename.toLowerCase();
+    return name.endsWith(".webp")
+      ? "image/webp"
+      : name.endsWith(".png")
+        ? "image/png"
+        : "image/jpeg";
   }
 }
 
